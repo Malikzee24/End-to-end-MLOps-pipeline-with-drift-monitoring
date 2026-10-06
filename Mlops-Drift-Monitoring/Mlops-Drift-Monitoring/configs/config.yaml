@@ -1,0 +1,46 @@
+# Central configuration. Override the state directory with MLOPS_STATE_DIR.
+data:
+  n_train: 10000
+  seed: 42
+  test_size: 0.2
+  reference_max_rows: 5000
+
+training:
+  experiment_name: churn-prediction
+  registered_model_name: churn-classifier
+  cv_folds: 5
+  candidates:
+    - name: logistic_regression
+      params: {C: 1.0, max_iter: 1000}
+    - name: random_forest
+      params: {n_estimators: 150, max_depth: 8, min_samples_leaf: 10, n_jobs: -1}
+    - name: hist_gradient_boosting
+      params: {max_iter: 150, learning_rate: 0.08, max_depth: 4}
+
+promotion:
+  champion_alias: champion
+  min_absolute_auc: 0.65      # never promote a model weaker than this
+  min_auc_improvement: 0.0    # challenger must beat champion by at least this much
+
+monitoring:
+  window_hours: 336           # 14 days of production traffic is compared to the reference
+  min_samples: 300            # below this, statistical tests are not trusted
+  drift:
+    alpha: 0.05
+    psi_threshold: 0.2
+    min_effect_size: 0.1
+    dataset_drift_share: 0.3  # >= 30% of features drifted => dataset-level drift
+    n_bins: 10
+  performance:
+    min_labeled_samples: 200
+    max_auc_drop: 0.05        # absolute ROC-AUC drop vs. the model's baseline
+  retrain:
+    enabled: true
+    cooldown_hours: 336       # avoid retrain thrashing
+    lookback_hours: 672       # labeled production data used for retraining
+    min_labeled_samples: 1200
+    history_rows: 1000        # old reference rows mixed in for stability
+    holdout_fraction: 0.3     # recent data held out to compare challenger vs champion
+
+serving:
+  model_refresh_seconds: 30

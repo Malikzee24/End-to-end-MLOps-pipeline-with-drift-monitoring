@@ -1,0 +1,79 @@
+# Full stack:  docker compose up --build
+#   API ........ http://localhost:8000/docs
+#   MLflow UI .. http://localhost:5000
+#   Prometheus . http://localhost:9090
+#   Grafana .... http://localhost:3000   (admin / admin)
+#   Reports .... http://localhost:8080/latest.html   (latest drift report)
+#
+# Add synthetic traffic with injected drift:   docker compose --profile demo up --build
+x-app: &app
+  build: .
+  image: mlops-drift-monitoring:latest
+  environment:
+    MLOPS_CONFIG: /app/configs/config.docker.yaml
+    MLOPS_STATE_DIR: /app/state
+  volumes:
+    - state:/app/state
+
+services:
+  trainer:             # one-shot: trains + promotes the first champion model
+    <<: *app
+    command: ["mlops", "train"]
+    restart: "no"
+
+  api:
+    <<: *app
+    command: ["mlops", "serve", "--port", "8000"]
+    ports: ["8000:8000"]
+    depends_on:
+      trainer: { condition: service_completed_successfully }
+
+  monitor:             # continuous drift monitoring + automated retraining
+    <<: *app
+    command: ["mlops", "monitor", "--loop", "--interval", "60"]
+    depends_on:
+      trainer: { condition: service_completed_successfully }
+
+  mlflow-ui:           # view on the same SQLite backend / artifact store
+    <<: *app
+    command: ["mlflow", "ui", "--host", "0.0.0.0", "--port", "5000",
+              "--backend-store-uri", "sqlite:////app/state/mlflow.db"]
+    ports: ["5000:5000"]
+    depends_on:
+      trainer: { condition: service_completed_successfully }
+
+  reports:             # serves the generated HTML drift reports
+    image: nginx:alpine
+    volumes:
+      - state:/usr/share/nginx/state:ro
+      - ./monitoring/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    ports: ["8080:80"]
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports: ["9090:9090"]
+    depends_on: [api]
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/mlops.json
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports: ["3000:3000"]
+    depends_on: [prometheus]
+
+  traffic:             # synthetic production traffic with drift injected after ~4 min
+    <<: *app
+    profiles: ["demo"]
+    command: ["python", "scripts/traffic_generator.py", "--api-url", "http://api:8000",
+              "--batch-size", "100", "--interval", "4", "--drift-after", "240", "--ramp", "420",
+              "--label-delay", "20"]
+    depends_on: [api]
+
+volumes:
+  state:

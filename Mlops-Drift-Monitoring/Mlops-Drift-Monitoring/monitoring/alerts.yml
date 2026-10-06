@@ -1,0 +1,26 @@
+groups:
+  - name: ml-monitoring
+    rules:
+      - alert: DatasetDriftDetected
+        expr: mlops_dataset_drift == 1
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "Input data drift detected for the churn model"
+      - alert: LiveAucBelowBaseline
+        expr: (mlops_baseline_roc_auc - mlops_live_roc_auc) > 0.05
+        for: 10m
+        labels: { severity: critical }
+        annotations:
+          summary: "Live ROC-AUC dropped more than 0.05 below the model baseline"
+      - alert: MonitoringJobStale
+        expr: time() - mlops_monitoring_last_run_timestamp > 3600
+        labels: { severity: warning }
+        annotations:
+          summary: "No monitoring run in the last hour"
+      - alert: HighInferenceLatency
+        expr: histogram_quantile(0.95, sum(rate(mlops_request_latency_seconds_bucket[5m])) by (le)) > 0.5
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "p95 inference latency above 500 ms"
