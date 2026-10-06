@@ -520,6 +520,3 @@ cooldown preventing retrain thrash, and a complete traffic, drift, retrain, prom
 - [ ] Alertmanager to Slack, and a one-click rollback workflow
 - [ ] Feature-store integration
 
-## License
-
-MIT, see [LICENSE](LICENSE).
